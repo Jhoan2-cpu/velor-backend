@@ -34,6 +34,8 @@ class LoginTest extends TestCase
                     'user' => ['id', 'display_name', 'email', 'locale'],
                 ],
             ]);
+
+        $this->assertIsString($response->json('data.user.id'));
     }
 
     public function test_returns_401_with_wrong_password(): void

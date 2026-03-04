@@ -35,9 +35,11 @@ class RegisterTest extends TestCase
             ->assertJsonStructure([
                 'data' => [
                     'user' => ['id', 'display_name', 'email', 'locale'],
-                    'preferences' => ['locale', 'time_zone_name'],
+                    'settings' => ['locale', 'time_zone_name'],
                 ],
             ]);
+
+        $this->assertIsString($response->json('data.user.id'));
 
         $this->assertDatabaseHas('users', [
             'email' => 'anton@velor.app',

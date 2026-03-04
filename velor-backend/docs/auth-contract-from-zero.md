@@ -7,6 +7,10 @@ Backend objetivo:
 - Google OAuth (redirect/callback)
 - Reverb se usa despues de auth, no en este modulo
 
+Convencion de IDs en API:
+- DB usa `bigint`
+- JSON expone IDs como `string` (ejemplo: `"12"`) para evitar perdida de precision en JS
+
 Frontend objetivo:
 - Registrar
 - Iniciar sesion
@@ -26,6 +30,11 @@ Frontend objetivo:
   - si empieza con `en` -> enviar `en`
   - cualquier otro -> fallback `es`
 - Backend solo acepta: `es`, `en`
+
+Fuente de verdad de `locale`:
+- `user_settings.locale` es canonical/source of truth.
+- `users.locale` se mantiene como copia denormalizada para lecturas rapidas y compatibilidad.
+- Toda escritura de locale debe actualizar ambos campos en una sola transaccion.
 
 ### Zona horaria (`time_zone_name`)
 - Fuente: navegador (`Intl.DateTimeFormat().resolvedOptions().timeZone`)
@@ -60,7 +69,7 @@ validaciones backend (Laravel):
 
 efectos de negocio obligatorios:
 - crear usuario
-- crear `user_preferences` iniciales con `locale` y `time_zone_name`
+- crear `user_settings` iniciales con `locale` y `time_zone_name`
 - iniciar sesion (cookie auth activa)
 - todo en transaccion DB
 
@@ -71,12 +80,12 @@ si todo esta correcto enviara (`201`):
 {
   "data": {
     "user": {
-      "id": "usr_123",
+      "id": "12",
       "display_name": "Anton Rivera",
       "email": "anton@velor.app",
       "locale": "es"
     },
-    "preferences": {
+    "settings": {
       "locale": "es",
       "time_zone_name": "America/Lima"
     }
@@ -126,7 +135,7 @@ si todo esta correcto enviara (`200`):
 {
   "data": {
     "user": {
-      "id": "usr_123",
+      "id": "12",
       "display_name": "Anton Rivera",
       "email": "anton@velor.app",
       "locale": "es"
@@ -153,7 +162,7 @@ si todo esta correcto enviara (`200`):
 ```json
 {
   "data": {
-    "id": "usr_123",
+    "id": "12",
     "display_name": "Anton Rivera",
     "email": "anton@velor.app",
     "locale": "es"

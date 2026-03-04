@@ -31,7 +31,7 @@ class AuthController extends Controller
             return response()->json([
                 'data' => [
                     'user' => new UserResource($user),
-                    'preferences' => new UserSettingResource($user->settings),
+                    'settings' => new UserSettingResource($user->settings),
                 ],
             ], 201);
         } catch (\Throwable) {
