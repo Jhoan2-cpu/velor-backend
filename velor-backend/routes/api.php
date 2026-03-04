@@ -1,36 +1,33 @@
 <?php
 
-use Illuminate\Http\Request;
+use App\Http\Controllers\Api\V1\Auth\AuthController;
+use App\Http\Controllers\Api\V1\Auth\GoogleAuthController;
 use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
-| API Routes
+| API Routes  — /api prefix is applied automatically by bootstrap/app.php
 |--------------------------------------------------------------------------
-|
-| Here is where you can register API routes for your application. These
-| routes are loaded by the RouteServiceProvider within a group which
-| is assigned the "api" middleware group. Enjoy building your API!
-|
 */
 
-// ─── Public Routes ────────────────────────────────────────────────────────────
-// Auth routes (login, register, etc.) — add here without auth middleware
-// Example: Route::post('/login', [AuthController::class, 'login']);
-// Example: Route::post('/register', [AuthController::class, 'register']);
+Route::prefix('v1')->name('v1.')->group(function () {
 
+    // ─── Auth ────────────────────────────────────────────────────────────────
+    Route::prefix('auth')->name('auth.')->group(function () {
 
-// ─── Authenticated Routes ─────────────────────────────────────────────────────
-Route::middleware('auth:sanctum')->group(function () {
+        // Public
+        Route::post('register', [AuthController::class, 'register'])->name('register');
+        Route::post('login', [AuthController::class, 'login'])->name('login');
 
-    // Current authenticated user
-    Route::get('/user', function (Request $request) {
-        return $request->user();
+        // Google OAuth
+        Route::get('google/redirect', [GoogleAuthController::class, 'redirect'])->name('google.redirect');
+        Route::get('google/callback', [GoogleAuthController::class, 'callback'])->name('google.callback');
+
+        // Protected
+        Route::middleware('auth:sanctum')->group(function () {
+            Route::post('logout', [AuthController::class, 'logout'])->name('logout');
+            Route::get('me', [AuthController::class, 'me'])->name('me');
+        });
     });
-
-    // ── Real-Time / Messaging ──────────────────────────────────────────────────
-    // Routes that trigger broadcasts via Laravel Reverb go here.
-    // Example: Route::post('/messages', [MessageController::class, 'store']);
-    // Example: Route::get('/messages/{channel}', [MessageController::class, 'index']);
 
 });

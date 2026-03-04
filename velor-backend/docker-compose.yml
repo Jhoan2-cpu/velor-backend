@@ -1,0 +1,51 @@
+services:
+
+  # ─── Backend (PHP + Apache) ───────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: velor_app
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8000}:80" # ← cambiar APP_PORT en .env si hay conflicto
+    volumes:
+      - .:/var/www/html # mount source para live editing en dev
+      - /var/www/html/vendor # no sobreescribir vendor del contenedor
+    networks:
+      - velor_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+
+  # ─── Base de datos (PostgreSQL) ───────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: velor_postgres
+    restart: unless-stopped
+    ports:
+      - "${DB_EXPOSE_PORT:-5432}:5432" # ← cambiar DB_EXPOSE_PORT si hay conflicto
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-velor}
+      POSTGRES_USER: ${DB_USERNAME:-velor}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - velor_network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USERNAME:-velor} -d ${DB_DATABASE:-velor}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# ─── Networks & Volumes ───────────────────────────────────────────────────────
+networks:
+  velor_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
