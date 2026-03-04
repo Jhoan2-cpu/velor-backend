@@ -11,22 +11,30 @@ return new class extends Migration {
             $table->id();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
 
-            // task es nullable: se puede enfocar sin tarea asignada
-            $table->foreignId('task_id')
+            // ── Tarea origen (nullable) ────────────────────────────────────
+            $table->foreignId('focus_task_id_nullable')
                 ->nullable()
                 ->constrained('focus_tasks')
                 ->nullOnDelete();
 
-            // ── Ventana de tiempo ───────────────────────────────────────────
-            $table->timestamp('started_at');
-            $table->timestamp('ended_at')->nullable(); // null = sesión en curso
-            $table->unsignedInteger('duration_seconds')->nullable(); // calculado al cerrar
+            // ── Snapshot de la tarea al momento de la entrada ─────────────
+            $table->string('task_title_snapshot')->nullable();
+            $table->string('task_icon_snapshot')->nullable();
+            $table->string('task_color_snapshot')->nullable();
+            $table->unsignedInteger('timer_target_snapshot_seconds')->nullable();
+            $table->string('mode_snapshot', 30)->nullable(); // 'timer' | 'stopwatch'
+
+            // ── Ventana de tiempo ─────────────────────────────────────────
+            $table->timestamp('started_at_utc');
+            $table->timestamp('ended_at_utc')->nullable();
+            $table->unsignedInteger('elapsed_seconds');
+            $table->string('stop_reason', 50)->nullable(); // e.g. 'manual', 'timer_completed'
 
             $table->timestamps();
 
-            // ── Índices ─────────────────────────────────────────────────────
-            $table->index(['user_id', 'started_at']);
-            $table->index(['task_id']);
+            // ── Índices ───────────────────────────────────────────────────
+            $table->index(['user_id', 'started_at_utc']);
+            $table->index(['focus_task_id_nullable']);
         });
     }
 

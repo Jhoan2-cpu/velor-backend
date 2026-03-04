@@ -11,23 +11,34 @@ return new class extends Migration {
             $table->id();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
 
-            $table->string('title', 255);
-            $table->text('description')->nullable();
+            // ── Identidad de la tarea ──────────────────────────────────────
+            $table->string('name');
+            $table->string('icon_tag')->nullable();
+            $table->string('color_tag')->nullable();
+            $table->string('alarm_time_local')->nullable(); // e.g. "08:30"
 
-            // ── UI personalización ──────────────────────────────────────────
-            $table->string('color', 20)->nullable();   // ej. "#FF5733"
-            $table->string('icon', 50)->nullable();    // identificador del icono
+            // ── Timer ──────────────────────────────────────────────────────
+            $table->unsignedInteger('timer_initial_seconds')->nullable();
+            $table->unsignedInteger('timer_remaining_seconds')->nullable();
+            $table->timestamp('timer_started_at_utc')->nullable();
+            $table->timestamp('timer_ended_at_utc')->nullable();
 
-            // ── Estado y tiempo acumulado ───────────────────────────────────
-            $table->boolean('is_archived')->default(false);
-            $table->unsignedInteger('total_focused_seconds')->default(0); // cache desnormalizado
-            $table->timestamp('completed_at')->nullable();
+            // ── Stopwatch ─────────────────────────────────────────────────
+            $table->unsignedInteger('stopwatch_elapsed_seconds')->default(0);
+            $table->timestamp('stopwatch_started_at_utc')->nullable();
+            $table->timestamp('stopwatch_ended_at_utc')->nullable();
+
+            // ── Totales y estado ──────────────────────────────────────────
+            $table->unsignedInteger('total_tracked_seconds')->default(0);
+            $table->string('active_mode', 30)->default('stopwatch'); // 'timer' | 'stopwatch'
+            $table->string('state', 30)->default('idle');            // 'idle' | 'running' | 'paused'
+            $table->unsignedInteger('version')->default(0);          // optimistic locking
 
             $table->timestamps();
 
-            // ── Índices ─────────────────────────────────────────────────────
-            $table->index(['user_id', 'is_archived']);
-            $table->index(['user_id', 'completed_at']);
+            // ── Índices ───────────────────────────────────────────────────
+            $table->index(['user_id', 'state']);
+            $table->index(['user_id', 'created_at']);
         });
     }
 

@@ -11,15 +11,16 @@ return new class extends Migration {
             $table->id();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
 
-            // ── Ventana de tiempo ───────────────────────────────────────────
-            $table->timestamp('started_at');
-            $table->timestamp('ended_at')->nullable(); // null = entrada en curso
-            $table->unsignedInteger('duration_seconds')->nullable(); // calculado al cerrar
+            // ── Ventana de tiempo ─────────────────────────────────────────
+            $table->timestamp('started_at_utc');
+            $table->timestamp('ended_at_utc')->nullable();
+            $table->unsignedInteger('elapsed_seconds');
+            $table->string('reason', 100)->nullable(); // e.g. 'user_idle', 'break', 'switch'
 
             $table->timestamps();
 
-            // ── Índices ─────────────────────────────────────────────────────
-            $table->index(['user_id', 'started_at']);
+            // ── Índices ───────────────────────────────────────────────────
+            $table->index(['user_id', 'started_at_utc']);
         });
     }
 
