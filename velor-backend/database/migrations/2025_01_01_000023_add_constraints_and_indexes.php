@@ -13,6 +13,10 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void
     {
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
         // ── 1. USER_SETTINGS: user_id UNIQUE (relación 1:1 real) ──────────
         Schema::table('user_settings', function (Blueprint $table) {
             $table->unique('user_id', 'user_settings_user_id_unique');
@@ -86,6 +90,10 @@ return new class extends Migration {
 
     public function down(): void
     {
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
         // Revertir índices
         DB::statement('DROP INDEX IF EXISTS idx_focus_tasks_user_updated');
         DB::statement('DROP INDEX IF EXISTS idx_focus_time_entries_user_started');

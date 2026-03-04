@@ -87,12 +87,13 @@ Request:
   "name": "Deep Work: API",
   "icon_tag": "brain",
   "color_tag": "#FF5733",
-  "alarm_time_local": "08:30",
-  "active_mode": "stopwatch"
+  "alarm_time_local": "08:30"
 }
 ```
 
 Response `201`: `TaskCard` completo.
+Notas:
+- Este endpoint de taskcards CRUD no acepta campos runtime (`state`, `active_mode`, `timer_*`, `stopwatch_*`, `total_tracked_seconds`).
 
 ### Actualizar taskcard
 
@@ -138,6 +139,18 @@ Response sugerido para `409`:
       "version": 4,
       "updated_at": "2026-03-04T15:10:00Z"
     }
+  }
+}
+```
+
+Response sugerido para `422` por campo runtime prohibido:
+```json
+{
+  "message": "The given data was invalid.",
+  "errors": {
+    "state": [
+      "The state field is not allowed in this endpoint."
+    ]
   }
 }
 ```

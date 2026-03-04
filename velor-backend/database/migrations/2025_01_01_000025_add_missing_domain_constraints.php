@@ -6,6 +6,10 @@ use Illuminate\Support\Facades\DB;
 return new class extends Migration {
     public function up(): void
     {
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
         // Normalize potentially invalid historical data before adding CHECK constraints.
         DB::statement("UPDATE users SET locale = 'es' WHERE locale IS NULL OR locale NOT IN ('es', 'en')");
         DB::statement("UPDATE user_settings SET locale = 'es' WHERE locale IS NULL OR locale NOT IN ('es', 'en')");
@@ -80,6 +84,10 @@ return new class extends Migration {
 
     public function down(): void
     {
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
         DB::statement('ALTER TABLE users DROP CONSTRAINT IF EXISTS chk_users_locale');
         DB::statement('ALTER TABLE user_settings DROP CONSTRAINT IF EXISTS chk_user_settings_locale');
         DB::statement('ALTER TABLE user_settings DROP CONSTRAINT IF EXISTS chk_user_settings_music_volume_range');

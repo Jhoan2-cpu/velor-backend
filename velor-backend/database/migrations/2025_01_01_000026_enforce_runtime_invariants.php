@@ -6,6 +6,10 @@ use Illuminate\Support\Facades\DB;
 return new class extends Migration {
     public function up(): void
     {
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
         // Normalize historical values before adding stricter constraints.
         DB::statement('UPDATE focus_tasks SET timer_initial_seconds = 0 WHERE timer_initial_seconds < 0');
         DB::statement('UPDATE focus_tasks SET timer_remaining_seconds = 0 WHERE timer_remaining_seconds < 0');
@@ -305,6 +309,10 @@ return new class extends Migration {
 
     public function down(): void
     {
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
         DB::statement('DROP TRIGGER IF EXISTS trg_fte_prevent_cross_active ON focus_time_entries');
         DB::statement('DROP TRIGGER IF EXISTS trg_ite_prevent_cross_active ON idle_time_entries');
 

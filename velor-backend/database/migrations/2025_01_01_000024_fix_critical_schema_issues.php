@@ -14,6 +14,10 @@ use Illuminate\Support\Facades\DB;
 return new class extends Migration {
     public function up(): void
     {
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
         // ── 1. state CHECK: incluir 'idle' ──────────────────────────────────
         DB::statement('ALTER TABLE focus_tasks DROP CONSTRAINT IF EXISTS chk_focus_tasks_state');
         DB::statement("
@@ -56,6 +60,10 @@ return new class extends Migration {
 
     public function down(): void
     {
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
         // Revertir #4
         DB::statement('ALTER TABLE focus_time_entries DROP CONSTRAINT IF EXISTS chk_focus_time_entries_mode_snapshot');
         DB::statement("

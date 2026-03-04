@@ -240,7 +240,7 @@ resultado esperado:
 
 `.env` minimo:
 ```env
-APP_URL=http://localhost:8000
+APP_URL=http://localhost:<BACKEND_PORT>
 FRONTEND_URL=http://localhost:5173
 
 SESSION_DRIVER=cookie
@@ -249,7 +249,7 @@ SANCTUM_STATEFUL_DOMAINS=localhost:5173
 
 GOOGLE_CLIENT_ID=xxxx
 GOOGLE_CLIENT_SECRET=xxxx
-GOOGLE_REDIRECT_URI=http://localhost:8000/api/v1/auth/google/callback
+GOOGLE_REDIRECT_URI=http://localhost:<BACKEND_PORT>/api/v1/auth/google/callback
 ```
 
 `config/cors.php`:

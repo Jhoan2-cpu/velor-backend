@@ -6,6 +6,10 @@ use Illuminate\Support\Facades\DB;
 return new class extends Migration {
     public function up(): void
     {
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
         // Keep only strict HH:MM values before enforcing the CHECK.
         DB::statement("
             UPDATE focus_tasks
@@ -50,6 +54,10 @@ return new class extends Migration {
 
     public function down(): void
     {
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
         DB::statement('DROP INDEX IF EXISTS idx_focus_time_entries_user_ended_closed');
         DB::statement('DROP INDEX IF EXISTS idx_idle_time_entries_user_ended_closed');
         DB::statement('ALTER TABLE focus_tasks DROP CONSTRAINT IF EXISTS chk_focus_tasks_alarm_time_local_hhmm');

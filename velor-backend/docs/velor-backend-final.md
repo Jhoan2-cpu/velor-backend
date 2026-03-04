@@ -401,10 +401,14 @@ Checks aplicados en `focus_time_entries` e `idle_time_entries`:
 
 ### 7) Serializacion de IDs `bigint` en API
 
-**Estado:** parcialmente verificado en codigo actual.
+**Estado:** implementado para modulos actuales; ampliar al cerrar modulos siguientes.
 
 - Implementado y verificado en Auth (`UserResource`): `id` se devuelve como `string`.
-- Para endpoints de focus/taskcards/realtime (incluyendo errores `409` y eventos) el contrato ya exige IDs string, pero su verificacion final depende de implementar esos endpoints en backend.
+- Implementado y verificado en TaskCards CRUD/realtime:
+  - `FocusTaskResource` serializa `id` y `user_id` como `string`.
+  - Payloads de `409 VERSION_CONFLICT` devuelven `current.id` como `string`.
+  - Eventos `focus.task.created|updated|deleted` publican IDs como `string`.
+- Pendiente de verificacion final en endpoints de sesiones/log cuando se implementen (`focus_time_entries`, `idle_time_entries`, `daily-log`).
 
 ### 8) `locale` duplicado (`users` vs `user_settings`)
 
@@ -507,12 +511,13 @@ Request:
   "name": "Deep Work: API",
   "icon_tag": "brain",
   "color_tag": "#FF5733",
-  "alarm_time_local": "08:30",
-  "active_mode": "stopwatch"
+  "alarm_time_local": "08:30"
 }
 ```
 
 Response `201`: `TaskCard` completo.
+Notas:
+- Este endpoint de taskcards CRUD no acepta campos runtime (`state`, `active_mode`, `timer_*`, `stopwatch_*`, `total_tracked_seconds`).
 
 ### Actualizar taskcard
 
@@ -558,6 +563,18 @@ Response sugerido para `409`:
       "version": 4,
       "updated_at": "2026-03-04T15:10:00Z"
     }
+  }
+}
+```
+
+Response sugerido para `422` por campo runtime prohibido:
+```json
+{
+  "message": "The given data was invalid.",
+  "errors": {
+    "state": [
+      "The state field is not allowed in this endpoint."
+    ]
   }
 }
 ```
@@ -1119,7 +1136,7 @@ resultado esperado:
 
 `.env` minimo:
 ```env
-APP_URL=http://localhost:8000
+APP_URL=http://localhost:<BACKEND_PORT>
 FRONTEND_URL=http://localhost:5173
 
 SESSION_DRIVER=cookie
@@ -1128,7 +1145,7 @@ SANCTUM_STATEFUL_DOMAINS=localhost:5173
 
 GOOGLE_CLIENT_ID=xxxx
 GOOGLE_CLIENT_SECRET=xxxx
-GOOGLE_REDIRECT_URI=http://localhost:8000/api/v1/auth/google/callback
+GOOGLE_REDIRECT_URI=http://localhost:<BACKEND_PORT>/api/v1/auth/google/callback
 ```
 
 `config/cors.php`:

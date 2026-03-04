@@ -53,4 +53,9 @@ class User extends Authenticatable
     {
         return $this->hasMany(UserOauthIdentity::class);
     }
+
+    public function focusTasks(): HasMany
+    {
+        return $this->hasMany(FocusTask::class);
+    }
 }
