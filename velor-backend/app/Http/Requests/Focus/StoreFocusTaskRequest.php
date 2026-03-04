@@ -6,10 +6,29 @@ use Illuminate\Foundation\Http\FormRequest;
 
 class StoreFocusTaskRequest extends FormRequest
 {
+    private const ICON_OPTIONS = [
+        'briefcase',
+        'learning',
+        'tools',
+        'code',
+        'book',
+        'pen',
+        'cart',
+        'game',
+    ];
+
+    private const COLOR_OPTIONS = [
+        'blue',
+        'green',
+        'amber',
+        'rose',
+        'pink',
+        'violet',
+    ];
+
     private const RUNTIME_FIELDS = [
         'state',
         'active_mode',
-        'timer_initial_seconds',
         'timer_remaining_seconds',
         'timer_started_at_utc',
         'timer_ended_at_utc',
@@ -29,9 +48,10 @@ class StoreFocusTaskRequest extends FormRequest
     {
         $rules = [
             'name' => ['required', 'string', 'min:1', 'max:120'],
-            'icon_tag' => ['nullable', 'string', 'max:255'],
-            'color_tag' => ['nullable', 'string', 'max:255'],
-            'alarm_time_local' => ['nullable', 'regex:/^([01]\d|2[0-3]):([0-5]\d)$/'],
+            'icon_tag' => ['required', 'string', 'in:' . implode(',', self::ICON_OPTIONS)],
+            'color_tag' => ['required', 'string', 'in:' . implode(',', self::COLOR_OPTIONS)],
+            'alarm_time_local' => ['nullable', 'date_format:H:i'],
+            'timer_initial_seconds' => ['nullable', 'integer', 'min:1', 'max:86400'],
         ];
 
         foreach (self::RUNTIME_FIELDS as $field) {
@@ -44,7 +64,7 @@ class StoreFocusTaskRequest extends FormRequest
     public function messages(): array
     {
         $messages = [
-            'alarm_time_local.regex' => 'The alarm_time_local format is invalid. Use HH:MM.',
+            'alarm_time_local.date_format' => 'The alarm_time_local format is invalid. Use HH:MM.',
         ];
 
         foreach (self::RUNTIME_FIELDS as $field) {

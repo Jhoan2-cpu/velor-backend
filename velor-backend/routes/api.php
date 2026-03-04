@@ -27,12 +27,20 @@ Route::prefix('v1')->name('v1.')->group(function () {
         });
     });
 
-    // Focus taskcards (CRUD basico)
-    Route::middleware('auth:sanctum')->prefix('focus')->name('focus.')->group(function () {
+    Route::middleware('auth:sanctum')->group(function () {
+        // Canonical endpoints for TaskCards contract.
         Route::get('tasks', [TaskCardController::class, 'index'])->name('tasks.index');
         Route::post('tasks', [TaskCardController::class, 'store'])->name('tasks.store');
         Route::patch('tasks/{taskId}', [TaskCardController::class, 'update'])->name('tasks.update');
         Route::delete('tasks/{taskId}', [TaskCardController::class, 'destroy'])->name('tasks.destroy');
+
+        // Backward-compatible alias under /focus/tasks.
+        Route::prefix('focus')->name('focus.')->group(function () {
+            Route::get('tasks', [TaskCardController::class, 'index'])->name('tasks.index');
+            Route::post('tasks', [TaskCardController::class, 'store'])->name('tasks.store');
+            Route::patch('tasks/{taskId}', [TaskCardController::class, 'update'])->name('tasks.update');
+            Route::delete('tasks/{taskId}', [TaskCardController::class, 'destroy'])->name('tasks.destroy');
+        });
     });
 
 });

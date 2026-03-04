@@ -9,3 +9,7 @@ Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
 Broadcast::channel('user.{userId}.focus.tasks', function ($user, $userId) {
     return (int) $user->id === (int) $userId;
 });
+
+Broadcast::channel('user.{userId}.taskcards', function ($user, $userId) {
+    return (int) $user->id === (int) $userId;
+});

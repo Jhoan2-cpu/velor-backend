@@ -32,6 +32,11 @@ class FocusTask extends Model
     protected function casts(): array
     {
         return [
+            'timer_initial_seconds' => 'integer',
+            'timer_remaining_seconds' => 'integer',
+            'stopwatch_elapsed_seconds' => 'integer',
+            'total_tracked_seconds' => 'integer',
+            'version' => 'integer',
             'timer_started_at_utc' => 'datetime',
             'timer_ended_at_utc' => 'datetime',
             'stopwatch_started_at_utc' => 'datetime',
