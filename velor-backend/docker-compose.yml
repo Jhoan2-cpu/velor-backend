@@ -31,6 +31,8 @@ services:
       POSTGRES_DB: ${DB_DATABASE:-velor}
       POSTGRES_USER: ${DB_USERNAME:-velor}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_HOST_AUTH_METHOD: trust
+
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
