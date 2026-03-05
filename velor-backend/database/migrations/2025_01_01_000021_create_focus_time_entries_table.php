@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration {
@@ -11,31 +12,93 @@ return new class extends Migration {
             $table->id();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
 
-            // ── Tarea origen (nullable) ────────────────────────────────────
             $table->foreignId('focus_task_id_nullable')
                 ->nullable()
                 ->constrained('focus_tasks')
                 ->nullOnDelete();
 
-            // ── Snapshot de la tarea al momento de la entrada ─────────────
+            // Task snapshot at session start
             $table->string('task_title_snapshot')->nullable();
             $table->string('task_icon_snapshot')->nullable();
             $table->string('task_color_snapshot')->nullable();
-            $table->unsignedInteger('timer_target_snapshot_seconds')->nullable();
-            $table->string('mode_snapshot', 30)->nullable(); // 'timer' | 'stopwatch'
+            $table->integer('timer_target_snapshot_seconds')->nullable();
+            $table->string('mode_snapshot', 30); // timer | stopwatch
 
-            // ── Ventana de tiempo ─────────────────────────────────────────
+            // Session window
             $table->timestamp('started_at_utc');
             $table->timestamp('ended_at_utc')->nullable();
-            $table->unsignedInteger('elapsed_seconds');
-            $table->string('stop_reason', 50)->nullable(); // e.g. 'manual', 'timer_completed'
+            $table->integer('elapsed_seconds')->nullable();
+            $table->string('stop_reason', 50)->nullable();
 
             $table->timestamps();
 
-            // ── Índices ───────────────────────────────────────────────────
             $table->index(['user_id', 'started_at_utc']);
             $table->index(['focus_task_id_nullable']);
         });
+
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
+        DB::statement("
+            ALTER TABLE focus_time_entries
+            ADD CONSTRAINT chk_focus_time_entries_mode_snapshot
+            CHECK (mode_snapshot IN ('timer', 'stopwatch'))
+        ");
+
+        DB::statement("
+            ALTER TABLE focus_time_entries
+            ADD CONSTRAINT chk_focus_time_entries_stop_reason
+            CHECK (
+                stop_reason IS NULL
+                OR stop_reason IN ('manual', 'timer_completed', 'task_switch', 'session_end', 'idle_detected')
+            )
+        ");
+
+        DB::statement("
+            ALTER TABLE focus_time_entries
+            ADD CONSTRAINT chk_fte_timer_target_snapshot_seconds_non_negative
+            CHECK (timer_target_snapshot_seconds IS NULL OR timer_target_snapshot_seconds >= 0)
+        ");
+
+        DB::statement("
+            ALTER TABLE focus_time_entries
+            ADD CONSTRAINT chk_fte_elapsed_nullness_matches_end
+            CHECK (
+                (ended_at_utc IS NULL AND elapsed_seconds IS NULL)
+                OR
+                (ended_at_utc IS NOT NULL AND elapsed_seconds IS NOT NULL)
+            )
+        ");
+
+        DB::statement("
+            ALTER TABLE focus_time_entries
+            ADD CONSTRAINT chk_fte_elapsed_non_negative_when_closed
+            CHECK (ended_at_utc IS NULL OR elapsed_seconds >= 0)
+        ");
+
+        DB::statement("
+            ALTER TABLE focus_time_entries
+            ADD CONSTRAINT chk_fte_end_after_start
+            CHECK (ended_at_utc IS NULL OR ended_at_utc >= started_at_utc)
+        ");
+
+        DB::statement('
+            CREATE UNIQUE INDEX idx_fte_one_active_per_user
+            ON focus_time_entries (user_id)
+            WHERE ended_at_utc IS NULL
+        ');
+
+        DB::statement('
+            CREATE INDEX idx_focus_time_entries_user_started
+            ON focus_time_entries (user_id, started_at_utc DESC)
+        ');
+
+        DB::statement('
+            CREATE INDEX idx_focus_time_entries_user_ended_closed
+            ON focus_time_entries (user_id, ended_at_utc DESC)
+            WHERE ended_at_utc IS NOT NULL
+        ');
     }
 
     public function down(): void
@@ -43,3 +106,4 @@ return new class extends Migration {
         Schema::dropIfExists('focus_time_entries');
     }
 };
+
