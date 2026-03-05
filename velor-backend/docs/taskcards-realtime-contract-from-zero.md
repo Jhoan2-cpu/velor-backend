@@ -55,6 +55,7 @@ Decision de contrato: IDs serializados como string para evitar perdida de precis
 
 Namespace canonico:
 - usar solo `/api/v1/focus/tasks` en frontend/backend/documentacion.
+- alias legacy temporal en backend: `/api/v1/tasks` (no usar para integraciones nuevas).
 
 ### Listar taskcards
 
@@ -131,8 +132,8 @@ Responses:
 Response sugerido para `409`:
 ```json
 {
-  "message": "Version conflict.",
-  "code": "VERSION_CONFLICT",
+  "message": "Task version conflict.",
+  "code": "TASK_VERSION_CONFLICT",
   "data": {
     "current": {
       "id": "101",
@@ -178,8 +179,8 @@ Responses:
 Response sugerido para `409`:
 ```json
 {
-  "message": "Version conflict.",
-  "code": "VERSION_CONFLICT",
+  "message": "Task version conflict.",
+  "code": "TASK_VERSION_CONFLICT",
   "data": {
     "current": {
       "id": "101",
@@ -198,9 +199,9 @@ Canal sugerido por usuario:
 - `private-user.{userId}.focus.tasks`
 
 Eventos sugeridos:
-- `focus.task.created`
-- `focus.task.updated`
-- `focus.task.deleted`
+- `taskcard.created`
+- `taskcard.updated`
+- `taskcard.deleted`
 
 Payload minimo:
 ```json
@@ -208,7 +209,7 @@ Payload minimo:
   "event_id": "evt_01HTZKX6A34N9Q7M5FQ8K3JY2R",
   "origin_device_id": "web-7f3b91",
   "occurred_at_utc": "2026-03-04T15:10:00Z",
-  "event": "focus.task.updated",
+  "event": "taskcard.updated",
   "task": {
     "id": "101",
     "user_id": "12",

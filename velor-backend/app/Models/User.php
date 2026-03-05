@@ -58,4 +58,14 @@ class User extends Authenticatable
     {
         return $this->hasMany(FocusTask::class);
     }
+
+    public function focusTimeEntries(): HasMany
+    {
+        return $this->hasMany(FocusTimeEntry::class);
+    }
+
+    public function idleTimeEntries(): HasMany
+    {
+        return $this->hasMany(IdleTimeEntry::class);
+    }
 }
