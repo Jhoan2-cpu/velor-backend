@@ -1,8 +1,10 @@
 <?php
 
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -16,7 +18,14 @@ return Application::configure(basePath: dirname(__DIR__))
         // Sanctum: stateful session for SPA (must be first in api group)
         $middleware->api(prepend: [
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
+            \App\Http\Middleware\ForceJsonResponse::class,
         ]);
+
+        // Never redirect guests. This backend is API-first and must avoid
+        // cross-origin 30x redirects that surface as CORS errors in the SPA.
+        $middleware->redirectGuestsTo(function (Request $request): ?string {
+            return null;
+        });
 
         // CORS for SPA frontend
         $middleware->validateCsrfTokens(except: [
@@ -24,5 +33,15 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->shouldRenderJsonWhen(function (Request $request, \Throwable $e): bool {
+            return $request->is('api/*') || $request->expectsJson();
+        });
+
+        $exceptions->render(function (AuthenticationException $exception, Request $request) {
+            if ($request->is('api/*')) {
+                return response()->json(['message' => 'Unauthenticated.'], 401);
+            }
+
+            return null;
+        });
     })->create();
