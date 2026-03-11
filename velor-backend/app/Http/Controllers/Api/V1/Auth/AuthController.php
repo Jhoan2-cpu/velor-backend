@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Api\V1\Auth;
 
 use App\Actions\Auth\LoginAction;
 use App\Actions\Auth\RegisterAction;
+use App\Exceptions\SingleSessionConflictException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
 use App\Http\Resources\UserResource;
 use App\Http\Resources\UserSettingResource;
+use App\Services\Auth\SingleSessionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -18,10 +20,9 @@ class AuthController extends Controller
     public function __construct(
         private RegisterAction $registerAction,
         private LoginAction $loginAction,
+        private SingleSessionService $singleSessionService,
     ) {
     }
-
-    // ─── POST /api/v1/auth/register ─────────────────────────────────────────────
 
     public function register(RegisterRequest $request): JsonResponse
     {
@@ -39,19 +40,20 @@ class AuthController extends Controller
         }
     }
 
-    // ─── POST /api/v1/auth/login ─────────────────────────────────────────────────
-
     public function login(LoginRequest $request): JsonResponse
     {
-        $credentials = [
-            'email' => $request->input('email'),
-            'password_hash' => $request->input('password'), // mapped to the model column
-        ];
-
-        $user = $this->loginAction->execute([
-            'email' => $request->input('email'),
-            'password' => $request->input('password'),
-        ]);
+        try {
+            $user = $this->loginAction->execute([
+                'email' => $request->input('email'),
+                'password' => $request->input('password'),
+            ]);
+        } catch (SingleSessionConflictException $exception) {
+            return response()->json([
+                'message' => $exception->getMessage(),
+                'code' => $exception->errorCode,
+                'data' => $exception->data,
+            ], 409);
+        }
 
         if (!$user) {
             return response()->json(['message' => 'Credenciales inválidas.'], 401);
@@ -64,12 +66,12 @@ class AuthController extends Controller
         ]);
     }
 
-    // ─── POST /api/v1/auth/logout ────────────────────────────────────────────────
-
     public function logout(Request $request): JsonResponse
     {
-        // Explicitly use the session-based web guard (not the Sanctum RequestGuard
-        // which lacks a logout() method).
+        if ($request->user() !== null) {
+            $this->singleSessionService->clear($request->user());
+        }
+
         $webGuard = Auth::guard('web');
 
         if ($webGuard->check()) {
@@ -83,8 +85,6 @@ class AuthController extends Controller
 
         return response()->json(['message' => 'Logged out.']);
     }
-
-    // ─── GET /api/v1/auth/me ─────────────────────────────────────────────────────
 
     public function me(Request $request): JsonResponse
     {

@@ -2,11 +2,18 @@
 
 namespace App\Actions\Auth;
 
+use App\Exceptions\SingleSessionConflictException;
 use App\Models\User;
+use App\Services\Auth\SingleSessionService;
 use Illuminate\Support\Facades\Auth;
 
 class LoginAction
 {
+    public function __construct(
+        private readonly SingleSessionService $singleSessionService,
+    ) {
+    }
+
     /**
      * Attempt login and regenerate the session.
      *
@@ -26,6 +33,19 @@ class LoginAction
 
         /** @var User $user */
         $user = Auth::user();
+
+        try {
+            $this->singleSessionService->assertCanLogin($user);
+        } catch (SingleSessionConflictException $exception) {
+            Auth::logout();
+
+            if (request()->hasSession()) {
+                request()->session()->invalidate();
+                request()->session()->regenerateToken();
+            }
+
+            throw $exception;
+        }
 
         return $user;
     }

@@ -40,7 +40,37 @@ class GoogleAuthController extends Controller
         } catch (\Throwable $e) {
             report($e);
 
-            return redirect(config('app.frontend_url') . '/login?auth_error=google');
+            $query = http_build_query([
+                'auth_error' => 'google',
+                'stage' => 'callback',
+                'status' => 'failed',
+                'code' => $this->resolveOAuthErrorCode($e),
+            ]);
+
+            return redirect(rtrim((string) config('app.frontend_url'), '/') . '/login?' . $query);
         }
+    }
+
+    private function resolveOAuthErrorCode(\Throwable $exception): string
+    {
+        $message = strtolower($exception->getMessage());
+
+        if (str_contains($message, 'redirect_uri_mismatch')) {
+            return 'REDIRECT_URI_MISMATCH';
+        }
+
+        if (str_contains($message, 'invalid_client')) {
+            return 'INVALID_CLIENT';
+        }
+
+        if (str_contains($message, 'invalid_grant')) {
+            return 'INVALID_GRANT';
+        }
+
+        if (str_contains($message, 'access_denied')) {
+            return 'ACCESS_DENIED';
+        }
+
+        return 'GOOGLE_OAUTH_FAILED';
     }
 }

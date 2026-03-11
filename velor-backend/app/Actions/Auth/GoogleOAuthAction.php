@@ -5,7 +5,9 @@ namespace App\Actions\Auth;
 use App\Models\User;
 use App\Models\UserOauthIdentity;
 use App\Models\UserSetting;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Laravel\Socialite\Two\User as SocialiteUser;
 
@@ -23,16 +25,38 @@ class GoogleOAuthAction
                 ->first();
 
             if ($identity) {
-                // Update tokens
-                $identity->update([
-                    'access_token' => $socialUser->token,
-                    'refresh_token' => $socialUser->refreshToken,
-                    'token_expires_at' => $socialUser->expiresIn
-                        ? now()->addSeconds($socialUser->expiresIn)
-                        : null,
-                    'provider_email' => $socialUser->getEmail(),
-                    'avatar_url' => $socialUser->getAvatar(),
-                ]);
+                // Update tokens. If legacy encrypted payload cannot be decrypted (APP_KEY changed),
+                // fall back to a raw DB update using fresh encrypted token values.
+                try {
+                    $identity->update([
+                        'access_token' => $socialUser->token,
+                        'refresh_token' => $socialUser->refreshToken,
+                        'token_expires_at' => $socialUser->expiresIn
+                            ? now()->addSeconds($socialUser->expiresIn)
+                            : null,
+                        'provider_email' => $socialUser->getEmail(),
+                        'avatar_url' => $socialUser->getAvatar(),
+                    ]);
+                } catch (DecryptException $exception) {
+                    report($exception);
+
+                    DB::table('user_oauth_identities')
+                        ->where('id', $identity->id)
+                        ->update([
+                            'access_token' => $socialUser->token !== null
+                                ? Crypt::encryptString((string) $socialUser->token)
+                                : null,
+                            'refresh_token' => $socialUser->refreshToken !== null
+                                ? Crypt::encryptString((string) $socialUser->refreshToken)
+                                : null,
+                            'token_expires_at' => $socialUser->expiresIn
+                                ? now()->addSeconds($socialUser->expiresIn)
+                                : null,
+                            'provider_email' => $socialUser->getEmail(),
+                            'avatar_url' => $socialUser->getAvatar(),
+                            'updated_at' => now(),
+                        ]);
+                }
 
                 $user = $identity->user;
             } else {

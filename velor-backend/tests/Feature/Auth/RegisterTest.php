@@ -47,6 +47,10 @@ class RegisterTest extends TestCase
             'locale' => 'es',
         ]);
 
+        $this->assertNotNull(
+            User::query()->where('email', 'anton@velor.app')->value('active_session_expires_at')
+        );
+
         $this->assertDatabaseHas('user_settings', [
             'locale' => 'es',
             'time_zone_name' => 'America/Lima',

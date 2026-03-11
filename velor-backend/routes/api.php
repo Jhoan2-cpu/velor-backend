@@ -24,13 +24,13 @@ Route::prefix('v1')->name('v1.')->group(function () {
 
 
         // Protected
-        Route::middleware('auth:sanctum')->group(function () {
+        Route::middleware(['auth:sanctum', 'single.session.refresh'])->group(function () {
             Route::post('logout', [AuthController::class, 'logout'])->name('logout');
             Route::get('me', [AuthController::class, 'me'])->name('me');
         });
     });
 
-    Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware(['auth:sanctum', 'single.session.refresh'])->group(function () {
         Route::get('app/bootstrap', [AppBootstrapController::class, 'show'])->name('app.bootstrap');
 
         // Canonical endpoints for TaskCards contract.

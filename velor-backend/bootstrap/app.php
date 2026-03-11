@@ -15,6 +15,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->alias([
+            'single.session.refresh' => \App\Http\Middleware\RefreshSingleSessionExpiry::class,
+        ]);
+
         // Sanctum: stateful session for SPA (must be first in api group)
         $middleware->api(prepend: [
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
@@ -39,6 +43,15 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $exceptions->render(function (AuthenticationException $exception, Request $request) {
             if ($request->is('api/*')) {
+                logger()->warning('api_unauthenticated', [
+                    'path' => $request->path(),
+                    'origin' => $request->headers->get('origin'),
+                    'referer' => $request->headers->get('referer'),
+                    'session_cookie_name' => config('session.cookie'),
+                    'has_session_cookie' => $request->cookies->has((string) config('session.cookie')),
+                    'has_bearer_token' => $request->bearerToken() !== null,
+                ]);
+
                 return response()->json(['message' => 'Unauthenticated.'], 401);
             }
 

@@ -33,16 +33,22 @@ class FocusRuntimeService
     public function active(int $userId): array
     {
         $now = $this->nowUtc();
+        $activeTask = $this->activeRuntimeTaskSnapshot($userId);
 
         return [
             'server_now_utc' => $now->toISOString(),
-            'active_focus_session' => $this->buildActiveFocusSession($userId, $now),
+            'active_focus_session' => $this->buildActiveFocusSessionOrFallback($userId, $now, $activeTask),
         ];
     }
 
     /**
      * @param array<string, mixed> $payload
-     * @return array{server_now_utc: string, active_focus_session: ?array<string, mixed>, stopped_session_summary: ?array<string, mixed>, created_time_entry_id: ?string}
+     * @return array{
+     *   server_now_utc: string,
+     *   active_focus_session: ?array<string, mixed>,
+     *   task: array<string, mixed>,
+     *   transitioned_to_working: bool
+     * }
      */
     public function start(int $userId, array $payload, string $originDeviceId = 'server'): array
     {
@@ -50,60 +56,55 @@ class FocusRuntimeService
             $now = $this->nowUtc();
             $this->lockUser($userId);
 
-            $activeFocusEntry = $this->activeFocusEntryForUpdate($userId);
-            if ($activeFocusEntry) {
-                throw new ActiveSessionConflictException(data: $this->activeConflictData($userId, $now));
-            }
-
-            $activeIdleEntry = $this->activeIdleEntryForUpdate($userId);
-            if ($activeIdleEntry) {
-                $this->closeIdleEntry($activeIdleEntry, $now);
-            }
-
             $task = $this->findTaskForUpdate($userId, (string) $payload['task_id']);
+            $activeRuntimeTask = $this->activeRuntimeTaskForUpdate($userId);
+            if ($activeRuntimeTask !== null) {
+                throw new ActiveSessionConflictException(data: [
+                    'server_now_utc' => $now->toISOString(),
+                    'active_focus_session' => $this->buildActiveFocusSessionOrFallback($userId, $now, $activeRuntimeTask),
+                    'working_task' => [
+                        'id' => (string) $activeRuntimeTask->id,
+                        'version' => (int) $activeRuntimeTask->version,
+                        'updated_at' => $activeRuntimeTask->updated_at?->toISOString(),
+                    ],
+                ]);
+            }
+
             $timerMode = $this->resolveTimerMode($task, $payload['timer_mode'] ?? null);
-            $targetSeconds = $this->resolveTargetSeconds($timerMode, $task, $payload['target_seconds'] ?? null);
+            $task->state = 'working';
+            $task->active_mode = $timerMode;
 
-            $this->applyStartState($task, $timerMode, $targetSeconds, $now);
+            if ($timerMode === 'timer') {
+                $task->timer_started_at_utc = $now;
+                $task->timer_ended_at_utc = null;
+            } else {
+                $task->stopwatch_started_at_utc = $now;
+                $task->stopwatch_ended_at_utc = null;
+            }
 
-            $entry = FocusTimeEntry::query()->create([
-                'user_id' => $userId,
-                'focus_task_id_nullable' => $task->id,
-                'task_title_snapshot' => $task->name,
-                'task_icon_snapshot' => $task->icon_tag,
-                'task_color_snapshot' => $task->color_tag,
-                'timer_target_snapshot_seconds' => $timerMode === 'timer' ? $targetSeconds : null,
-                'mode_snapshot' => $timerMode,
-                'started_at_utc' => $now,
-                'ended_at_utc' => null,
-                'elapsed_seconds' => null,
-                'stop_reason' => null,
-            ]);
+            $task->version = (int) $task->version + 1;
+            $task->save();
+            $task->refresh();
 
-            $data = $this->runtimePayloadData(
-                $userId,
-                $now,
-                stoppedSessionSummary: null,
-                createdTimeEntryId: (string) $entry->id,
-            );
-
-            DB::afterCommit(function () use ($userId, $originDeviceId, $task, $data): void {
-                event(new FocusRuntimeEvent(
-                    userId: $userId,
-                    type: 'focus_session.updated',
-                    data: $data,
-                    originDeviceId: $originDeviceId,
-                ));
-
+            DB::afterCommit(function () use ($task, $originDeviceId): void {
                 $this->dispatchTaskCardUpdatedEvent($task, $originDeviceId);
             });
 
-            return $data;
+            return [
+                'server_now_utc' => $now->toISOString(),
+                'active_focus_session' => $this->buildActiveFocusSessionOrFallback($userId, $now, $task),
+                'task' => (new FocusTaskResource($task))->resolve(),
+                'transitioned_to_working' => true,
+            ];
         });
     }
 
     /**
-     * @return array{server_now_utc: string, active_focus_session: ?array<string, mixed>, stopped_session_summary: ?array<string, mixed>, created_time_entry_id: ?string}
+     * @return array{
+     *   server_now_utc: string,
+     *   active_focus_session: ?array<string, mixed>,
+     *   task: array<string, mixed>
+     * }
      */
     public function pause(int $userId, int $expectedVersion, string $originDeviceId = 'server'): array
     {
@@ -111,13 +112,20 @@ class FocusRuntimeService
             $now = $this->nowUtc();
             $this->lockUser($userId);
 
-            $context = $this->requireActiveContextForUpdate($userId, $now);
-            $task = $context['task'];
+            $task = FocusTask::query()
+                ->where('user_id', $userId)
+                ->where('state', 'working')
+                ->lockForUpdate()
+                ->first();
+
+            if (!$task) {
+                throw new FocusRuntimeConflictException(
+                    message: 'No working task to pause.',
+                    data: ['server_now_utc' => $now->toISOString()],
+                );
+            }
 
             $this->assertExpectedVersion($task, $expectedVersion, $userId, $now);
-            if ($task->state !== 'working') {
-                throw new FocusRuntimeConflictException(message: 'Only working sessions can be paused.', data: $this->activeConflictData($userId, $now));
-            }
 
             if ($task->active_mode === 'timer') {
                 $remaining = $this->computeTimerRemainingSeconds($task, $now);
@@ -136,25 +144,25 @@ class FocusRuntimeService
             $task->save();
             $task->refresh();
 
-            $data = $this->runtimePayloadData($userId, $now);
-
-            DB::afterCommit(function () use ($userId, $originDeviceId, $task, $data): void {
-                event(new FocusRuntimeEvent(
-                    userId: $userId,
-                    type: 'focus_session.updated',
-                    data: $data,
-                    originDeviceId: $originDeviceId,
-                ));
-
+            DB::afterCommit(function () use ($task, $originDeviceId): void {
                 $this->dispatchTaskCardUpdatedEvent($task, $originDeviceId);
             });
 
-            return $data;
+            return [
+                'server_now_utc' => $now->toISOString(),
+                'active_focus_session' => $this->buildActiveFocusSessionOrFallback($userId, $now, $task),
+                'task' => (new FocusTaskResource($task))->resolve(),
+            ];
         });
     }
 
     /**
-     * @return array{server_now_utc: string, active_focus_session: ?array<string, mixed>, stopped_session_summary: ?array<string, mixed>, created_time_entry_id: ?string}
+     * @return array{
+     *   server_now_utc: string,
+     *   active_focus_session: ?array<string, mixed>,
+     *   stopped_session_summary: ?array<string, mixed>,
+     *   created_time_entry_id: ?string
+     * }
      */
     public function resume(int $userId, int $expectedVersion, string $originDeviceId = 'server'): array
     {
@@ -162,8 +170,13 @@ class FocusRuntimeService
             $now = $this->nowUtc();
             $this->lockUser($userId);
 
-            $context = $this->requireActiveContextForUpdate($userId, $now);
-            $task = $context['task'];
+            $task = $this->activeRuntimeTaskForUpdate($userId);
+            if ($task === null) {
+                throw new FocusRuntimeConflictException(
+                    message: 'No active focus session.',
+                    data: $this->activeConflictData($userId, $now),
+                );
+            }
 
             $this->assertExpectedVersion($task, $expectedVersion, $userId, $now);
             if ($task->state !== 'paused') {
@@ -183,7 +196,7 @@ class FocusRuntimeService
             $task->save();
             $task->refresh();
 
-            $data = $this->runtimePayloadData($userId, $now);
+            $data = $this->runtimePayloadData($userId, $now, fallbackTask: $task);
 
             DB::afterCommit(function () use ($userId, $originDeviceId, $task, $data): void {
                 event(new FocusRuntimeEvent(
@@ -249,7 +262,12 @@ class FocusRuntimeService
     }
 
     /**
-     * @return array{server_now_utc: string, active_focus_session: ?array<string, mixed>, stopped_session_summary: ?array<string, mixed>, created_time_entry_id: ?string}
+     * @return array{
+     *   server_now_utc: string,
+     *   active_focus_session: ?array<string, mixed>,
+     *   task: array<string, mixed>,
+     *   transitioned_to_idle: bool
+     * }
      */
     public function reset(int $userId, string $taskId, int $expectedVersion, string $originDeviceId = 'server'): array
     {
@@ -260,57 +278,37 @@ class FocusRuntimeService
             $task = $this->findTaskForUpdate($userId, $taskId);
             $this->assertExpectedVersion($task, $expectedVersion, $userId, $now);
 
-            $stoppedSummary = null;
-            $active = $this->activeFocusContextForUpdate($userId);
+            $transitionedToIdle = $task->state !== 'idle'
+                || $task->timer_remaining_seconds !== $task->timer_initial_seconds
+                || (int) $task->stopwatch_elapsed_seconds !== 0
+                || $task->timer_started_at_utc !== null
+                || $task->timer_ended_at_utc !== null
+                || $task->stopwatch_started_at_utc !== null
+                || $task->stopwatch_ended_at_utc !== null;
 
-            if ($active !== null) {
-                /** @var FocusTask $activeTask */
-                $activeTask = $active['task'];
-                /** @var FocusTimeEntry $activeEntry */
-                $activeEntry = $active['entry'];
+            if ($transitionedToIdle) {
+                $task->state = 'idle';
+                $task->timer_remaining_seconds = $task->timer_initial_seconds;
+                $task->timer_started_at_utc = null;
+                $task->timer_ended_at_utc = null;
+                $task->stopwatch_elapsed_seconds = 0;
+                $task->stopwatch_started_at_utc = null;
+                $task->stopwatch_ended_at_utc = null;
+                $task->version = (int) $task->version + 1;
+                $task->save();
+                $task->refresh();
 
-                if ((int) $activeTask->id !== (int) $task->id) {
-                    throw new FocusRuntimeConflictException(data: $this->activeConflictData($userId, $now));
-                }
-
-                $stoppedSummary = $this->closeActiveSession($activeTask, $activeEntry, $now, 'session_end');
-                if (!$this->activeIdleEntryForUpdate($userId)) {
-                    IdleTimeEntry::query()->create([
-                        'user_id' => $userId,
-                        'started_at_utc' => $now,
-                        'ended_at_utc' => null,
-                        'elapsed_seconds' => null,
-                        'reason' => 'session_end',
-                    ]);
-                }
+                DB::afterCommit(function () use ($task, $originDeviceId): void {
+                    $this->dispatchTaskCardUpdatedEvent($task, $originDeviceId);
+                });
             }
 
-            $task->state = 'idle';
-            $task->timer_remaining_seconds = $task->timer_initial_seconds;
-            $task->timer_started_at_utc = null;
-            $task->timer_ended_at_utc = null;
-            $task->stopwatch_elapsed_seconds = 0;
-            $task->stopwatch_started_at_utc = null;
-            $task->stopwatch_ended_at_utc = null;
-            $task->version = (int) $task->version + 1;
-            $task->save();
-            $task->refresh();
-
-            $data = $this->runtimePayloadData($userId, $now, stoppedSessionSummary: $stoppedSummary);
-            $eventType = $stoppedSummary !== null ? 'focus_session.stopped' : 'focus_session.updated';
-
-            DB::afterCommit(function () use ($userId, $originDeviceId, $task, $data, $eventType): void {
-                event(new FocusRuntimeEvent(
-                    userId: $userId,
-                    type: $eventType,
-                    data: $data,
-                    originDeviceId: $originDeviceId,
-                ));
-
-                $this->dispatchTaskCardUpdatedEvent($task, $originDeviceId);
-            });
-
-            return $data;
+            return [
+                'server_now_utc' => $now->toISOString(),
+                'active_focus_session' => $this->buildActiveFocusSessionOrFallback($userId, $now, $task),
+                'task' => (new FocusTaskResource($task))->resolve(),
+                'transitioned_to_idle' => $transitionedToIdle,
+            ];
         });
     }
 
@@ -633,10 +631,11 @@ class FocusRuntimeService
         CarbonInterface $now,
         ?array $stoppedSessionSummary = null,
         ?string $createdTimeEntryId = null,
+        ?FocusTask $fallbackTask = null,
     ): array {
         return [
             'server_now_utc' => $now->toISOString(),
-            'active_focus_session' => $this->buildActiveFocusSession($userId, $now),
+            'active_focus_session' => $this->buildActiveFocusSessionOrFallback($userId, $now, $fallbackTask),
             'stopped_session_summary' => $stoppedSessionSummary,
             'created_time_entry_id' => $createdTimeEntryId,
         ];
@@ -647,9 +646,11 @@ class FocusRuntimeService
      */
     private function activeConflictData(int $userId, CarbonInterface $now): array
     {
+        $activeTask = $this->activeRuntimeTaskSnapshot($userId);
+
         return [
             'server_now_utc' => $now->toISOString(),
-            'active_focus_session' => $this->buildActiveFocusSession($userId, $now),
+            'active_focus_session' => $this->buildActiveFocusSessionOrFallback($userId, $now, $activeTask),
         ];
     }
 
@@ -703,6 +704,63 @@ class FocusRuntimeService
         ];
     }
 
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function buildActiveFocusSessionOrFallback(int $userId, CarbonInterface $now, ?FocusTask $fallbackTask = null): ?array
+    {
+        $activeFocusSession = $this->buildActiveFocusSession($userId, $now);
+        if ($activeFocusSession !== null) {
+            return $activeFocusSession;
+        }
+
+        if ($fallbackTask === null) {
+            return null;
+        }
+
+        return $this->buildActiveFocusSessionFromTask($fallbackTask, $now);
+    }
+
+    /**
+     * Fallback session shape for runtime flows that still rely only on focus_tasks.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function buildActiveFocusSessionFromTask(FocusTask $task, CarbonInterface $now): ?array
+    {
+        if (!in_array($task->state, ['working', 'paused'], true)) {
+            return null;
+        }
+
+        $timerMode = $task->active_mode;
+        $targetSeconds = $timerMode === 'timer'
+            ? ($task->timer_initial_seconds !== null ? (int) $task->timer_initial_seconds : null)
+            : null;
+        $elapsedSecondsTotal = $timerMode === 'timer'
+            ? $this->timerElapsedForSnapshot($task, $targetSeconds, $now)
+            : $this->stopwatchElapsedForSnapshot($task, $now);
+
+        $lastResumedAt = $timerMode === 'timer'
+            ? $task->timer_started_at_utc
+            : $task->stopwatch_started_at_utc;
+        $lastPausedAt = $timerMode === 'timer'
+            ? $task->timer_ended_at_utc
+            : $task->stopwatch_ended_at_utc;
+
+        return [
+            'id' => 'task-runtime:' . (string) $task->id,
+            'task_id' => (string) $task->id,
+            'timer_mode' => $timerMode,
+            'session_state' => $this->mapSessionState($task->state),
+            'target_seconds' => $targetSeconds,
+            'started_at_utc' => $lastResumedAt?->toISOString(),
+            'last_resumed_at_utc' => $lastResumedAt?->toISOString(),
+            'last_paused_at_utc' => $lastPausedAt?->toISOString(),
+            'elapsed_seconds_total' => $elapsedSecondsTotal,
+            'version' => (int) $task->version,
+        ];
+    }
+
     private function timerElapsedForSnapshot(?FocusTask $task, ?int $targetSeconds, CarbonInterface $now): int
     {
         if (!$task) {
@@ -736,12 +794,22 @@ class FocusRuntimeService
     private function mapSessionState(?string $taskState): string
     {
         return match ($taskState) {
-            'working' => 'running',
+            'working' => 'working',
             'paused' => 'paused',
             'stopped' => 'stopped',
             'idle' => 'idle',
-            default => 'running',
+            default => 'idle',
         };
+    }
+
+    private function activeRuntimeTaskSnapshot(int $userId): ?FocusTask
+    {
+        return FocusTask::query()
+            ->where('user_id', $userId)
+            ->whereIn('state', ['working', 'paused'])
+            ->orderByRaw("CASE WHEN state = 'working' THEN 0 ELSE 1 END")
+            ->orderByDesc('updated_at')
+            ->first();
     }
 
     private function mapIdleReasonFromStopReason(string $stopReason): ?string
@@ -761,6 +829,7 @@ class FocusRuntimeService
         }
 
         throw new FocusRuntimeConflictException(
+            errorCode: 'VERSION_MISMATCH',
             message: 'Runtime version conflict.',
             data: [
                 ...$this->activeConflictData($userId, $now),
@@ -803,6 +872,17 @@ class FocusRuntimeService
         return FocusTimeEntry::query()
             ->where('user_id', $userId)
             ->whereNull('ended_at_utc')
+            ->lockForUpdate()
+            ->first();
+    }
+
+    private function activeRuntimeTaskForUpdate(int $userId): ?FocusTask
+    {
+        return FocusTask::query()
+            ->where('user_id', $userId)
+            ->whereIn('state', ['working', 'paused'])
+            ->orderByRaw("CASE WHEN state = 'working' THEN 0 ELSE 1 END")
+            ->orderByDesc('updated_at')
             ->lockForUpdate()
             ->first();
     }

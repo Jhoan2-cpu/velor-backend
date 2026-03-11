@@ -4,12 +4,18 @@ namespace App\Actions\Auth;
 
 use App\Models\User;
 use App\Models\UserSetting;
+use App\Services\Auth\SingleSessionService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class RegisterAction
 {
+    public function __construct(
+        private readonly SingleSessionService $singleSessionService,
+    ) {
+    }
+
     /**
      * Create a new user with settings and log them in, atomically.
      *
@@ -32,6 +38,7 @@ class RegisterAction
             ]);
 
             Auth::login($user);
+            $this->singleSessionService->refresh($user);
 
             return $user->load('settings');
         });

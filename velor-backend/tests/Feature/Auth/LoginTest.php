@@ -68,4 +68,42 @@ class LoginTest extends TestCase
         $response->assertStatus(422)
             ->assertJsonValidationErrors(['email', 'password']);
     }
+
+    public function test_blocks_login_when_another_active_session_exists(): void
+    {
+        $this->createUser();
+
+        User::query()
+            ->where('email', 'anton@velor.app')
+            ->update([
+                'active_session_expires_at' => now('UTC')->addMinutes(30),
+            ]);
+
+        $response = $this->postJson('/api/v1/auth/login', [
+            'email' => 'anton@velor.app',
+            'password' => 'secret12345',
+        ]);
+
+        $response->assertStatus(409)
+            ->assertJsonPath('code', 'SESSION_ALREADY_ACTIVE');
+    }
+
+    public function test_allows_login_when_previous_session_lock_is_expired(): void
+    {
+        $this->createUser();
+
+        User::query()
+            ->where('email', 'anton@velor.app')
+            ->update([
+                'active_session_expires_at' => now('UTC')->subMinute(),
+            ]);
+
+        $response = $this->postJson('/api/v1/auth/login', [
+            'email' => 'anton@velor.app',
+            'password' => 'secret12345',
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('data.user.email', 'anton@velor.app');
+    }
 }
